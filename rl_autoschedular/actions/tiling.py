@@ -16,9 +16,16 @@ class Tiling(Action):
 
     parameters: list[int]
 
-    def __init__(self, parameters: list[int], state: Optional[OperationState] = None, **extras):
-        if state:
-            # Case where state is provided -> Parameters need processing
+    def __init__(
+        self,
+        parameters: list[int],
+        state: Optional[OperationState] = None,
+        /, *,
+        process_params: bool = True,
+        **extras
+    ):
+        if state and process_params:
+            # Case where parameters need processing
 
             tile_sizes = []
             for param, loop in zip(parameters, state.operation_features.nested_loops):
@@ -97,6 +104,16 @@ class Tiling(Action):
             index = eps_distribution.sample()
         else:
             index = distribution.sample()
+
+        return index
+
+    def params_to_index(self):
+        index = torch.zeros(self.params_size())
+        for i, param in enumerate(self.parameters):
+            if param == 0:
+                index[i] = 0
+            else:
+                index[i] = int(math.log2(param)) + 1
 
         return index
 

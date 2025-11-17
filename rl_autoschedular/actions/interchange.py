@@ -26,8 +26,15 @@ class Interchange(Action):
     method = InterchangeMethod(Config().interchange_mode)
     log_std = torch.nn.Parameter(torch.zeros(1))
 
-    def __init__(self, parameters: list[int], state: Optional[OperationState] = None, **extras):
-        if state:
+    def __init__(
+        self,
+        parameters: list[int],
+        state: Optional[OperationState] = None,
+        /, *,
+        process_params: bool = True,
+        **extras
+    ):
+        if state and process_params:
             # Case where state is provided -> Parameters need processing
 
             assert len(parameters) == 1, 'uncompatible parameters for constructor call'
@@ -51,6 +58,17 @@ class Interchange(Action):
                     if len(parameters) < num_loops:
                         self.ready = False
         super().__init__(parameters, state, **extras)
+
+    @classmethod
+    def from_str(cls, state, action_str):
+        action = super().from_str(state, action_str)
+        if cls.method == InterchangeMethod.LevelsPointers:
+            for i in range(1, len(action.parameters)):
+                sub_action = cls(action.parameters[:i], state, process_params=False)
+                sub_action.ready = False
+                action.sub_actions.append(sub_action)
+
+        return action
 
     @classmethod
     def params_size(cls):
@@ -163,6 +181,16 @@ class Interchange(Action):
 
         return index.unsqueeze(-1)
 
+    def params_to_index(self):
+        match self.method:
+            case InterchangeMethod.ContinuousEncoding:
+                return torch.tensor([self.__encode_continuous(self.parameters[0])])
+            case InterchangeMethod.EnumeratedCandidates:
+                candidates = self.__get_candidates(len(self.parameters))
+                return torch.tensor([candidates.index(self.parameters)])
+            case InterchangeMethod.LevelsPointers:
+                return torch.tensor(self.parameters[-1:])
+
     def _apply_ready(self, code):
         return transform_interchange(code, self.operation_tag, self.parameters)
 
@@ -217,6 +245,18 @@ class Interchange(Action):
                     nl[j] += 1
 
         return nl
+
+    @classmethod
+    def __encode_continuous(parameters: list[int]) -> int:
+        """Encode the loop permutation to get the interchange parameter.
+
+        Args:
+            parameters (list[int]): The loop permutation.
+
+        Returns:
+            int: The interchange parameter.
+        """
+        raise NotImplementedError
 
     @staticmethod
     def __get_candidates(num_loops: int) -> list[list[int]]:
